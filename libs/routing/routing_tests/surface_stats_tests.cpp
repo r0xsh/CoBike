@@ -3,6 +3,8 @@
 #include "routing/brouter_gpx_parser.hpp"
 #include "routing/route_surface.hpp"
 
+#include "geometry/mercator.hpp"
+
 #include "base/math.hpp"
 
 #include <string>
@@ -54,6 +56,8 @@ UNIT_TEST(SurfaceFromWayTags_Unknown)
 {
   TEST_EQUAL(SurfaceFromWayTags(""), RouteSurface::Unknown, ());
   TEST_EQUAL(SurfaceFromWayTags("direct_segment=7"), RouteSurface::Unknown, ());
+  // Valueless marker (beeline legs may carry an empty value).
+  TEST_EQUAL(SurfaceFromWayTags("direct_segment="), RouteSurface::Unknown, ());
   TEST_EQUAL(SurfaceFromWayTags("highway=track"), RouteSurface::Unknown, ());
   TEST_EQUAL(SurfaceFromWayTags("surface=wood"), RouteSurface::Unknown, ());
   TEST_EQUAL(SurfaceFromWayTags("highway=service surface=acacia_wood"), RouteSurface::Unknown, ());
@@ -105,14 +109,18 @@ UNIT_TEST(ParseGpxResponse_Mode9)
   // Total route time from the <brouter:info> metadata: "time=2m 40s".
   TEST_ALMOST_EQUAL_ABS(track.totalTimeSec, 160.0, 1e-6, ());
 
-  // Way tags are run-length decoded: points 0..2 asphalt, points 3..5 gravel.
-  TEST_EQUAL(track.wayTagsPerPoint.size(), 6, ());
-  TEST_EQUAL(track.wayTagsPerPoint[0], "", ());
-  TEST_EQUAL(track.wayTagsPerPoint[1], "highway=residential surface=asphalt", ());
-  TEST_EQUAL(track.wayTagsPerPoint[2], "highway=residential surface=asphalt", ());
-  TEST_EQUAL(track.wayTagsPerPoint[3], "highway=track surface=gravel tracktype=grade2", ());
-  TEST_EQUAL(track.wayTagsPerPoint[4], "highway=track surface=gravel tracktype=grade2", ());
-  TEST_EQUAL(track.wayTagsPerPoint[5], "highway=track surface=gravel tracktype=grade2", ());
+  // Way tags are run-length encoded: two runs, asphalt from point 1 and
+  // gravel from point 3; point 0 precedes the first run.
+  TEST_EQUAL(track.wayTagRuns.size(), 2, ());
+  TEST_EQUAL(track.wayTagRuns[0].firstPointIdx, 1, ());
+  TEST_EQUAL(track.wayTagRuns[0].tags, "highway=residential surface=asphalt", ());
+  TEST_EQUAL(track.wayTagRuns[1].firstPointIdx, 3, ());
+  TEST_EQUAL(track.wayTagRuns[1].tags, "highway=track surface=gravel tracktype=grade2", ());
+  TEST(WayTagsAt(track.wayTagRuns, 0) == nullptr, ());
+  TEST(WayTagsAt({}, 0) == nullptr, ());
+  TEST_EQUAL(*WayTagsAt(track.wayTagRuns, 1), "highway=residential surface=asphalt", ());
+  TEST_EQUAL(*WayTagsAt(track.wayTagRuns, 2), "highway=residential surface=asphalt", ());
+  TEST_EQUAL(*WayTagsAt(track.wayTagRuns, 5), "highway=track surface=gravel tracktype=grade2", ());
 
   // Speeds per point; absent entries are 0.
   TEST_EQUAL(track.speedKphPerPoint.size(), 6, ());
@@ -145,6 +153,35 @@ UNIT_TEST(BuildCumulativeTimes_SpeedBased)
   // alternative, so following the total would make all routes show the same
   // time (the bug this guards against).
   TEST_NOT_EQUAL(times.back(), 160.0, ());
+}
+
+UNIT_TEST(BuildCumulativeTimes_PartialSpeedsNoMixing)
+{
+  // Only the first point carries a speed; later segments have none, and a
+  // shared <brouter:info> total is present. The speed strategy must win
+  // outright: untagged segments stay at 0 instead of being filled from the
+  // proportional distribution of the total (mixing subtracted the already
+  // accumulated speed time from a proportional share and produced negative
+  // segment times).
+  BrouterTrack track;
+  track.points = {mercator::FromLatLon(48.0, 2.0), mercator::FromLatLon(48.001, 2.0),
+                  mercator::FromLatLon(48.002, 2.0)};
+  track.speedKphPerPoint = {36.0, 0.0, 0.0};
+  track.totalTimeSec = 5.0;  // smaller than the speed-derived first segment
+
+  std::vector<double> const times = BuildCumulativeTimes(track);
+  TEST_EQUAL(times.size(), 2, ());
+  // Segment 0 uses the 36 km/h (= 10 m/s) speed of its arriving point.
+  double const seg0Sec = mercator::DistanceOnEarth(track.points[0], track.points[1]) / 10.0;
+  TEST_ALMOST_EQUAL_ABS(times[0], seg0Sec, 1e-6, ());
+  // Segment 1 gets no invented time from the info total.
+  TEST_ALMOST_EQUAL_ABS(times[1], times[0], 1e-9, ());
+  for (size_t i = 0; i < times.size(); ++i)
+  {
+    TEST_GREATER_OR_EQUAL(times[i], 0.0, ());
+    if (i > 0)
+      TEST_GREATER_OR_EQUAL(times[i], times[i - 1], ());
+  }
 }
 
 UNIT_TEST(BuildCumulativeTimes_TimeFallback)

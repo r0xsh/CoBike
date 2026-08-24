@@ -15,6 +15,16 @@ namespace routing
 namespace
 {
 // Extracts the value of a single "key=value" token, case-insensitive key.
+// Case-insensitive comparison of two tag keys.
+bool KeysEqual(std::string const & a, std::string const & b)
+{
+  return a.size() == b.size() &&
+         std::equal(a.begin(), a.end(), b.begin(),
+                    [](char x, char y) { return std::tolower(static_cast<unsigned char>(x)) ==
+                                                std::tolower(static_cast<unsigned char>(y)); });
+}
+
+// Extracts the value of a single "key=value" token, case-insensitive key.
 // Returns empty string when the key is absent.
 std::string GetTagValue(std::string const & wayTags, std::string const & key)
 {
@@ -25,21 +35,28 @@ std::string GetTagValue(std::string const & wayTags, std::string const & key)
     size_t const eq = token.find('=');
     if (eq == std::string::npos)
       continue;
-    std::string const k = token.substr(0, eq);
-    if (k.size() != key.size())
-      continue;
-    if (!std::equal(k.begin(), k.end(), key.begin(),
-                    [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) ==
-                                                 std::tolower(static_cast<unsigned char>(b)); }))
+    if (!KeysEqual(token.substr(0, eq), key))
       continue;
     return token.substr(eq + 1);
   }
   return {};
 }
 
+// True when the key is present, regardless of its value ("key=" counts as
+// present; needed for valueless markers like "direct_segment=").
 bool HasTag(std::string const & wayTags, std::string const & key)
 {
-  return !GetTagValue(wayTags, key).empty();
+  std::istringstream stream(wayTags);
+  std::string token;
+  while (stream >> token)
+  {
+    size_t const eq = token.find('=');
+    if (eq == std::string::npos)
+      continue;
+    if (KeysEqual(token.substr(0, eq), key))
+      return true;
+  }
+  return false;
 }
 
 // OSM tracktype grades: grade1 (solid) .. grade5 (soft). 0 when absent.

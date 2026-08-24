@@ -247,8 +247,16 @@ RoadWarningMarkType GetRoadType(RoutingOptions::Option road)
 
 dp::Color SurfaceToRouteColor(routing::RouteSurface surface)
 {
-  // Matches the bottom-sheet legend colors (colors.xml surface_*); Unknown
-  // is shown gray, same as in the legend.
+  // PAIRS WITH android/app/src/main/res/values/colors.xml — the on-map route
+  // line must stay identical to the bottom-sheet legend. C++ cannot read
+  // Android resources, so the hex values are duplicated here; if you change a
+  // color below, change the matching surface_* entry in colors.xml too (and
+  // vice versa):
+  //   Paved       -> R.color.surface_paved       (#4CAF50)
+  //   Gravel      -> R.color.surface_gravel      (#FFC107)
+  //   Dirt        -> R.color.surface_dirt        (#8D6E63)
+  //   Singletrack -> R.color.surface_singletrack (#FF7043)
+  //   Unknown     -> R.color.surface_unknown     (#9E9E9E)
   switch (surface)
   {
   case routing::RouteSurface::Paved: return dp::Color(0x4C, 0xAF, 0x50);

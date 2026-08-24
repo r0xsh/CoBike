@@ -5,6 +5,7 @@
 
 #include "routing/turns.hpp"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,17 @@ struct TurnHint
   std::string destination;
 };
 
+// One stretch of constant <brouter:way> content: |firstPointIdx| is the first
+// trackpoint carrying |tags|; the tags stay valid up to (excluding) the next
+// run's start (or the end of the track). Trackpoints before the first run
+// carry no tags. Kept run-length encoded because long routes easily span
+// thousands of points but far fewer distinct ways.
+struct WayTagsRun
+{
+  size_t firstPointIdx = 0;
+  std::string tags;
+};
+
 // A single parsed BRouter response: one track polyline plus its turn
 // instructions, per-point elevations, way tags and speeds. BRouter returns
 // exactly one <trk> per response (the requested alternative index selects
@@ -32,10 +44,9 @@ struct BrouterTrack
   std::vector<m2::PointD> points;
   std::vector<TurnHint> hints;
   std::vector<geometry::Altitude> altitudes;
-  // Run-length decoded <brouter:way> content per trackpoint: each point
-  // carries the key=value pairs of the way it belongs to ("" before the
-  // first tagged point).
-  std::vector<std::string> wayTagsPerPoint;
+  // Run-length encoded <brouter:way> content, ordered by firstPointIdx
+  // (see WayTagsRun). Resolve individual points with WayTagsAt().
+  std::vector<WayTagsRun> wayTagRuns;
   // Per-point <brouter:speed> in km/h, 0 when absent.
   std::vector<double> speedKphPerPoint;
   // Per-point <time> as UTC epoch seconds, 0 when absent.
@@ -50,6 +61,10 @@ struct BrouterTrack
   double totalTimeSec = 0.0;
 };
 
+// \returns the tags of the run covering |pointIdx| (see WayTagsRun), or
+// nullptr when the point carries no way tags.
+std::string const * WayTagsAt(std::vector<WayTagsRun> const & runs, size_t pointIdx);
+
 // Parse the BRouter GPX payload once (single pass over the document), filling
 // all BrouterTrack members. Returns an empty points vector on failure.
 BrouterTrack ParseGpxResponse(std::string const & gpx);
@@ -61,11 +76,14 @@ turns::CarDirection BrouterTurnToCarDirection(int code, double angleDeg);
 // Roundabout exit number encoded in a turn code; 0 for non-roundabout codes.
 uint32_t BrouterTurnExitNumber(int code);
 
-// Build a per-segment cumulative-time vector for the track. Priority: exact
-// per-point speeds (<brouter:speed>, enabled via the injected
-// profile:showspeed profile variable and thus present per alternative), then
-// <time> stamp deltas, then the <brouter:info> total distributed
-// proportionally to distance. Returns an all-zero vector when the track
+// Build a per-segment cumulative-time vector for the track. Exactly one
+// strategy is used per track, picked by data quality: exact per-point speeds
+// (<brouter:speed>, enabled via the injected profile:showspeed profile
+// variable and thus present per alternative), else <time> stamp deltas, else
+// the <brouter:info> total distributed proportionally to distance. Strategies
+// are never mixed within a track: the shared metadata total overlaps with
+// time already covered by exact per-point data, and blending the two can
+// yield negative segment times. Returns an all-zero vector when the track
 // carries none of them.
 std::vector<double> BuildCumulativeTimes(BrouterTrack const & track);
 }  // namespace routing

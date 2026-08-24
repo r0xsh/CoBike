@@ -83,9 +83,9 @@
           android:id="@+id/surface_chevron"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:text="▸"
           android:textColor="?colorSecondary"
-          android:textSize="14sp"/>
+          android:textSize="14sp"
+          tools:text="▸"/>
       </LinearLayout>
 
       <app.organicmaps.routing.SurfaceBarView

@@ -208,9 +208,9 @@ double ParseInfoTime(std::string const & info)
 }
 
 // Parse the per-trackpoint <extensions> block (BRouter mode 9). Fills the
-// way tags (run-length decoded via |lastWay|), speed and the voice hint.
-void ParsePointExtensions(pugi::xml_node const & point, size_t pointIdx, std::string & lastWay,
-                          BrouterTrack & track)
+// way tags (run-length encoded into |track.wayTagRuns|), speed and the voice
+// hint.
+void ParsePointExtensions(pugi::xml_node const & point, size_t pointIdx, BrouterTrack & track)
 {
   double speed = 0.0;
   double timeEpoch = 0.0;
@@ -231,9 +231,14 @@ void ParsePointExtensions(pugi::xml_node const & point, size_t pointIdx, std::st
     }
   }
 
-  if (!wayTags.empty())
-    lastWay = wayTags;
-  track.wayTagsPerPoint.push_back(lastWay);
+  // Start a new run only when the tags change; BRouter re-declares identical
+  // tags on consecutive points of the same way, which just extends the open
+  // run (keeps storage O(#ways) instead of O(#points)).
+  if (!wayTags.empty() &&
+      (track.wayTagRuns.empty() || track.wayTagRuns.back().tags != wayTags))
+  {
+    track.wayTagRuns.push_back({pointIdx, std::move(wayTags)});
+  }
   track.speedKphPerPoint.push_back(speed);
   track.timeEpochPerPoint.push_back(timeEpoch);
 
@@ -283,7 +288,6 @@ BrouterTrack ParseGpxResponse(std::string const & gpx)
       result.totalTimeSec = ParseInfoTime(ReadChildString(metaExt, "brouter:info", std::string{}));
   }
 
-  std::string lastWay;
   for (pugi::xml_node trk : gpxNode.children("trk"))
   {
     size_t pointIdx = 0;
@@ -295,13 +299,25 @@ BrouterTrack ParseGpxResponse(std::string const & gpx)
                                                         ReadDoubleAttr(pt, "lon", 0.0)));
         result.altitudes.push_back(static_cast<geometry::Altitude>(
             ReadChildDouble(pt, "ele", static_cast<double>(geometry::kInvalidAltitude))));
-        ParsePointExtensions(pt, pointIdx, lastWay, result);
+        ParsePointExtensions(pt, pointIdx, result);
         ++pointIdx;
       }
     }
     break;  // single track per response
   }
   return result;
+}
+
+std::string const * WayTagsAt(std::vector<WayTagsRun> const & runs, size_t pointIdx)
+{
+  // Runs are ordered by firstPointIdx; the covering run is the last one
+  // starting at or before |pointIdx|.
+  auto const it = std::upper_bound(runs.begin(), runs.end(), pointIdx,
+                                   [](size_t idx, WayTagsRun const & run)
+                                   { return idx < run.firstPointIdx; });
+  if (it == runs.begin())
+    return nullptr;
+  return &(it - 1)->tags;
 }
 
 turns::CarDirection BrouterTurnToCarDirection(int code, double angleDeg)
@@ -397,22 +413,28 @@ std::vector<double> BuildCumulativeTimes(BrouterTrack const & track)
     if (hasSpeed)
     {
       // Speed is reported per point for the segment arriving at that point.
+      // A segment with no usable neighbour speed stays at 0: falling through
+      // to another strategy would mix sources and can produce negative
+      // segment times (see below).
       double const speedKph = speedAt(i + 1);
       if (speedKph > 0.0)
         segSec = segDists[i] / (speedKph * 1000.0 / 3600.0);
     }
-    if (segSec == 0.0 && hasTime)
+    else if (hasTime)
     {
       double const dt = track.timeEpochPerPoint[i + 1] - track.timeEpochPerPoint[i];
       if (dt > 0.0)
         segSec = dt;
     }
-    if (segSec == 0.0 && track.totalTimeSec > 0.0 && totalDist > 0.0)
+    else if (totalDist > 0.0)
     {
       // Fallback when no per-point speeds or time stamps arrived (e.g. a
       // BRouter companion that ignores the injected profile:showspeed
       // variable): the metadata total is shared by all alternatives, so this
       // is only exact for the primary route; distribute it proportionally.
+      // Only reached when neither exact source exists at all — mixing this
+      // with speed/stamp data subtracts already-accumulated time from a
+      // proportional share and can go negative.
       travelled += segDists[i];
       segSec = track.totalTimeSec * travelled / totalDist - accumulated;
     }

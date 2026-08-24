@@ -115,9 +115,9 @@ void SynthesizeRoundaboutEntries(std::vector<RouteSegment> & segments)
       continue;
 
     // Walk back over consecutive None segments (e.g. a straight approach)
-    // until we find the most recent real turn. j == 0 stays valid: the
-    // outer None/EnterRoundAbout guards below handle the two "nothing to
-    // rewrite" cases there as well.
+    // until we find the most recent real turn. entryIdx == 0 stays valid:
+    // the outer guards below handle the "nothing to rewrite" cases there
+    // as well.
     size_t entryIdx = i - 1;
     while (entryIdx > 0
            && segments[entryIdx].GetTurn().m_turn == CarDirection::None)
@@ -127,10 +127,15 @@ void SynthesizeRoundaboutEntries(std::vector<RouteSegment> & segments)
 
     auto const entryTurn = segments[entryIdx].GetTurn();
     auto const direction = entryTurn.m_turn;
-    // Skip if there is nothing to label as entry, or we already produced
-    // an EnterRoundAbout (e.g. two exits were back-to-back through zero
-    // None segments in between).
-    if (direction == CarDirection::None || direction == CarDirection::EnterRoundAbout)
+    // Skip when there is nothing to label as an entry turn:
+    // - None: straight approach, no hint to rewrite;
+    // - EnterRoundAbout: entry already balanced (e.g. two exits sharing one
+    //   entry through zero None segments in between);
+    // - LeaveRoundAbout: the exit of a previous roundabout sits directly
+    //   ahead of this one (back-to-back roundabouts). Rewriting it would
+    //   destroy that exit turn, so this entry stays unlabelled.
+    if (direction == CarDirection::None || direction == CarDirection::EnterRoundAbout ||
+        direction == CarDirection::LeaveRoundAbout)
       continue;
 
     // Wholesale rewrite via the public SetTurn setter: BRouter responses never
@@ -154,7 +159,7 @@ std::vector<Route> BuildRoutes(std::vector<BrouterTrack> const & tracks)
     auto const & track = trackData.points;
     std::vector<TurnHint> const & hints = trackData.hints;
     std::vector<geometry::Altitude> const & trackAlts = trackData.altitudes;
-    std::vector<std::string> const & wayTagsPerPoint = trackData.wayTagsPerPoint;
+    std::vector<WayTagsRun> const & wayTagRuns = trackData.wayTagRuns;
     if (track.size() < 2)
       continue;
     auto const safeAlt = [](geometry::Altitude a) {
@@ -194,9 +199,8 @@ std::vector<Route> BuildRoutes(std::vector<BrouterTrack> const & tracks)
       }
       routeSegments.emplace_back(segment, turn, junction, roadNameInfo);
 
-      std::string const & wayTags =
-          (i + 1 < wayTagsPerPoint.size()) ? wayTagsPerPoint[i + 1] : std::string{};
-      RouteSurface const surface = SurfaceFromWayTags(wayTags);
+      std::string const * wayTags = WayTagsAt(wayTagRuns, i + 1);
+      RouteSurface const surface = SurfaceFromWayTags(wayTags ? *wayTags : std::string{});
       routeSegments.back().SetSurface(surface);
       double const segDistM = mercator::DistanceOnEarth(track[i], track[i + 1]);
       surfaceStats.m_distanceM[static_cast<size_t>(surface)] += segDistM;

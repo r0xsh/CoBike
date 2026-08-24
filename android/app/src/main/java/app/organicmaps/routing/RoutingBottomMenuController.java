@@ -51,6 +51,7 @@ import app.organicmaps.widget.recycler.MultilineLayoutManager;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.imageview.ShapeableImageView;
 import com.google.android.material.textview.MaterialTextView;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
@@ -74,7 +75,7 @@ final class RoutingBottomMenuController implements View.OnClickListener
   private final MaterialButton mStart;
   @NonNull
   private final ShapeableImageView mAltitudeChart;
-@NonNull
+  @NonNull
   private final MaterialTextView mTime;
   @NonNull
   private final MaterialTextView mAltitudeDifference;
@@ -89,6 +90,10 @@ final class RoutingBottomMenuController implements View.OnClickListener
   @NonNull
   private final LinearLayout mSurfaceLegend;
   private boolean mSurfaceLegendExpanded = false;
+  // Per-surface meters rendered the last time the surface section was built;
+  // used to skip the bar/legend rebuild when a refresh carries no new data.
+  @Nullable
+  private float[] mLastSurfaceMeters;
   @Nullable
   private final MaterialTextView mTimeVehicle;
   @Nullable
@@ -106,6 +111,12 @@ final class RoutingBottomMenuController implements View.OnClickListener
 
   @Nullable
   private final RoutingBottomMenuListener mListener;
+
+  // Chevron glyphs for the collapsible surface legend. Single source of truth
+  // is here; altitude_chart_panel.xml only carries a tools:text preview of
+  // CHEVRON_COLLAPSED.
+  private static final String CHEVRON_EXPANDED = "\u25BE";
+  private static final String CHEVRON_COLLAPSED = "\u25B8";
 
   @NonNull
   static RoutingBottomMenuController newInstance(@NonNull Activity activity, @NonNull View frame,
@@ -441,7 +452,7 @@ final class RoutingBottomMenuController implements View.OnClickListener
         RoutingController.get().getRouteAlternativeSurface(RoutingController.get().getActiveRouteIndex());
     if (surface == null || surface.length != SurfaceBarView.SURFACE_COLOR_RES.length)
     {
-      UiUtils.hide(mSurfaceSection);
+      hideSurfaceSection();
       return;
     }
 
@@ -454,9 +465,19 @@ final class RoutingBottomMenuController implements View.OnClickListener
     }
     if (total <= 0.0)
     {
-      UiUtils.hide(mSurfaceSection);
+      hideSurfaceSection();
       return;
     }
+
+    // The native fetch above runs on every routing-details refresh, but the
+    // bar, its content description and the legend rows only depend on the
+    // per-surface meters: skip their rebuild while nothing changed.
+    if (mSurfaceSection.getVisibility() == View.VISIBLE &&
+        Arrays.equals(surfaceMeters, mLastSurfaceMeters))
+    {
+      return;
+    }
+    mLastSurfaceMeters = surfaceMeters;
 
     mSurfaceBar.setSurfaceMeters(surfaceMeters);
     mSurfaceBar.setContentDescription(buildSurfaceContentDescription(mContext, surface));
@@ -481,10 +502,18 @@ final class RoutingBottomMenuController implements View.OnClickListener
     UiUtils.show(mSurfaceSection);
   }
 
+  private void hideSurfaceSection()
+  {
+    // Reset the cache so the section is rebuilt from scratch the next time
+    // surface data appears.
+    mLastSurfaceMeters = null;
+    UiUtils.hide(mSurfaceSection);
+  }
+
   private void applySurfaceLegendVisibility()
   {
     UiUtils.showIf(mSurfaceLegendExpanded, mSurfaceLegend);
-    mSurfaceChevron.setText(mSurfaceLegendExpanded ? "\u25BE" : "\u25B8");
+    mSurfaceChevron.setText(mSurfaceLegendExpanded ? CHEVRON_EXPANDED : CHEVRON_COLLAPSED);
     mSurfaceHeader.setContentDescription(
         mContext.getString(R.string.routing_surface_title) + " "
         + mContext.getString(mSurfaceLegendExpanded ? R.string.surface_legend_expanded
