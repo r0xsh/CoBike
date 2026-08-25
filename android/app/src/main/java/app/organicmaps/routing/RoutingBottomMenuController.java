@@ -9,6 +9,7 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
@@ -19,12 +20,16 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
 import android.view.View;
+import android.view.Gravity;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TextView;
 import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.TextViewCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import app.organicmaps.MwmApplication;
 import app.organicmaps.R;
@@ -46,8 +51,10 @@ import app.organicmaps.widget.recycler.MultilineLayoutManager;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.imageview.ShapeableImageView;
 import com.google.android.material.textview.MaterialTextView;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 
 final class RoutingBottomMenuController implements View.OnClickListener
 {
@@ -73,6 +80,21 @@ final class RoutingBottomMenuController implements View.OnClickListener
   @NonNull
   private final MaterialTextView mAltitudeDifference;
   @NonNull
+  private final View mSurfaceSection;
+  @NonNull
+  private final View mSurfaceHeader;
+  @NonNull
+  private final TextView mSurfaceChevron;
+  @NonNull
+  private final SurfaceBarView mSurfaceBar;
+  @NonNull
+  private final LinearLayout mSurfaceLegend;
+  private boolean mSurfaceLegendExpanded = false;
+  // Per-surface meters rendered the last time the surface section was built;
+  // used to skip the bar/legend rebuild when a refresh carries no new data.
+  @Nullable
+  private float[] mLastSurfaceMeters;
+  @Nullable
   private final MaterialTextView mTimeVehicle;
   @Nullable
   private final MaterialTextView mArrival;
@@ -90,6 +112,12 @@ final class RoutingBottomMenuController implements View.OnClickListener
   @Nullable
   private final RoutingBottomMenuListener mListener;
 
+  // Chevron glyphs for the collapsible surface legend. Single source of truth
+  // is here; altitude_chart_panel.xml only carries a tools:text preview of
+  // CHEVRON_COLLAPSED.
+  private static final String CHEVRON_EXPANDED = "\u25BE";
+  private static final String CHEVRON_COLLAPSED = "\u25B8";
+
   @NonNull
   static RoutingBottomMenuController newInstance(@NonNull Activity activity, @NonNull View frame,
                                                  @NonNull RoutingBottomMenuListener listener)
@@ -105,9 +133,15 @@ final class RoutingBottomMenuController implements View.OnClickListener
     MaterialTextView altitudeDifference = (MaterialTextView) getViewById(activity, frame, R.id.altitude_difference);
     MaterialTextView arrival = (MaterialTextView) getViewById(activity, frame, R.id.arrival);
     View actionFrame = getViewById(activity, frame, R.id.routing_action_frame);
+    View surfaceSection = getViewById(activity, frame, R.id.surface_section);
+    View surfaceHeader = getViewById(activity, frame, R.id.surface_header);
+    TextView surfaceChevron = (TextView) getViewById(activity, frame, R.id.surface_chevron);
+    SurfaceBarView surfaceBar = (SurfaceBarView) getViewById(activity, frame, R.id.surface_bar);
+    LinearLayout surfaceLegend = (LinearLayout) getViewById(activity, frame, R.id.surface_legend);
 
     return new RoutingBottomMenuController(activity, altitudeChartFrame, timeElevationLine, transitFrame, error, start,
                                            altitudeChart, time, altitudeDifference, timeVehicle, arrival, actionFrame,
+                                           surfaceSection, surfaceHeader, surfaceChevron, surfaceBar, surfaceLegend,
                                            listener);
   }
 
@@ -124,7 +158,10 @@ final class RoutingBottomMenuController implements View.OnClickListener
                                       @NonNull ShapeableImageView altitudeChart, @NonNull MaterialTextView time,
                                       @NonNull MaterialTextView altitudeDifference,
                                       @NonNull MaterialTextView timeVehicle, @Nullable MaterialTextView arrival,
-                                      @NonNull View actionFrame, @Nullable RoutingBottomMenuListener listener)
+                                      @NonNull View actionFrame, @NonNull View surfaceSection,
+                                      @NonNull View surfaceHeader, @NonNull TextView surfaceChevron,
+                                      @NonNull SurfaceBarView surfaceBar, @NonNull LinearLayout surfaceLegend,
+                                      @Nullable RoutingBottomMenuListener listener)
   {
     mContext = context;
     mAltitudeChartFrame = altitudeChartFrame;
@@ -138,6 +175,15 @@ final class RoutingBottomMenuController implements View.OnClickListener
     mTimeVehicle = timeVehicle;
     mArrival = arrival;
     mActionFrame = actionFrame;
+    mSurfaceSection = surfaceSection;
+    mSurfaceHeader = surfaceHeader;
+    mSurfaceChevron = surfaceChevron;
+    mSurfaceBar = surfaceBar;
+    mSurfaceLegend = surfaceLegend;
+    mSurfaceHeader.setOnClickListener(v -> {
+      mSurfaceLegendExpanded = !mSurfaceLegendExpanded;
+      applySurfaceLegendVisibility();
+    });
     mActionMessage = actionFrame.findViewById(R.id.tv__message);
     mActionButton = actionFrame.findViewById(R.id.btn__my_position_use);
     mActionButton.setOnClickListener(this);
@@ -169,6 +215,7 @@ final class RoutingBottomMenuController implements View.OnClickListener
     if (!RoutingController.get().isVehicleRouterType() && !RoutingController.get().isRulerRouterType())
       showRouteAltitudeChart();
     showRoutingDetails();
+    updateSurfaceSection();
     UiUtils.show(mAltitudeChartFrame);
     MaterialButton saveButton = mAltitudeChartFrame.findViewById(R.id.btn__save);
     saveButton.setText(R.string.save);
@@ -392,6 +439,136 @@ final class RoutingBottomMenuController implements View.OnClickListener
       String arrivalTime = Utils.formatArrivalTime(rinfo.totalTimeInSeconds);
       mArrival.setText(arrivalTime);
     }
+  }
+
+  /**
+   * Per-surface breakdown (stacked bar + legend) of the currently active
+   * route. The whole section is hidden when the engine produced no surface
+   * data (non-BRouter routes, BRouter data sets without way tags).
+   */
+  private void updateSurfaceSection()
+  {
+    final Distance[] surface =
+        RoutingController.get().getRouteAlternativeSurface(RoutingController.get().getActiveRouteIndex());
+    if (surface == null || surface.length != SurfaceBarView.SURFACE_COLOR_RES.length)
+    {
+      hideSurfaceSection();
+      return;
+    }
+
+    final float[] surfaceMeters = new float[SurfaceBarView.SURFACE_COLOR_RES.length];
+    double total = 0.0;
+    for (int i = 0; i < surfaceMeters.length; ++i)
+    {
+      surfaceMeters[i] = (float) surface[i].mDistance;
+      total += surface[i].mDistance;
+    }
+    if (total <= 0.0)
+    {
+      hideSurfaceSection();
+      return;
+    }
+
+    // The native fetch above runs on every routing-details refresh, but the
+    // bar, its content description and the legend rows only depend on the
+    // per-surface meters: skip their rebuild while nothing changed.
+    if (mSurfaceSection.getVisibility() == View.VISIBLE &&
+        Arrays.equals(surfaceMeters, mLastSurfaceMeters))
+    {
+      return;
+    }
+    mLastSurfaceMeters = surfaceMeters;
+
+    mSurfaceBar.setSurfaceMeters(surfaceMeters);
+    mSurfaceBar.setContentDescription(buildSurfaceContentDescription(mContext, surface));
+    mSurfaceLegend.removeAllViews();
+
+    // Most ridable first, Unknown last; rows below 1% are dropped. Every row
+    // is a share of the whole route (unknown included), so the rows sum to
+    // 100% and never exceed it.
+    for (int i = 0; i < SurfaceBarView.SURFACE_NAME_RES.length; ++i)
+    {
+      final double percent = surface[i].mDistance / total * 100.0;
+      if (percent < 1.0)
+        continue;
+      mSurfaceLegend.addView(buildSurfaceLegendRow(i, surface[i], percent));
+    }
+    // The legend starts collapsed when the section is first shown so the sheet
+    // stays compact on small screens; the user's choice is kept across route
+    // updates within the same routing session.
+    if (mSurfaceSection.getVisibility() != View.VISIBLE)
+      mSurfaceLegendExpanded = false;
+    applySurfaceLegendVisibility();
+    UiUtils.show(mSurfaceSection);
+  }
+
+  private void hideSurfaceSection()
+  {
+    // Reset the cache so the section is rebuilt from scratch the next time
+    // surface data appears.
+    mLastSurfaceMeters = null;
+    UiUtils.hide(mSurfaceSection);
+  }
+
+  private void applySurfaceLegendVisibility()
+  {
+    UiUtils.showIf(mSurfaceLegendExpanded, mSurfaceLegend);
+    mSurfaceChevron.setText(mSurfaceLegendExpanded ? CHEVRON_EXPANDED : CHEVRON_COLLAPSED);
+    mSurfaceHeader.setContentDescription(
+        mContext.getString(R.string.routing_surface_title) + " "
+        + mContext.getString(mSurfaceLegendExpanded ? R.string.surface_legend_expanded
+                                                    : R.string.surface_legend_collapsed));
+  }
+
+  @NonNull
+  private View buildSurfaceLegendRow(int surfaceIdx, @NonNull Distance distance, double percent)
+  {
+    final Resources res = mContext.getResources();
+    final LinearLayout row = new LinearLayout(mContext);
+    row.setOrientation(LinearLayout.HORIZONTAL);
+    row.setGravity(Gravity.CENTER_VERTICAL);
+    row.setPadding(0, 0, 0, res.getDimensionPixelSize(R.dimen.margin_eighth));
+
+    final View dot = new View(mContext);
+    final int dotSize = res.getDimensionPixelSize(R.dimen.elevation_profile_difficulty_dot_size);
+    final LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dotSize, dotSize);
+    dotLp.setMarginEnd(res.getDimensionPixelSize(R.dimen.margin_half));
+    dot.setLayoutParams(dotLp);
+    final GradientDrawable dotBg = new GradientDrawable();
+    dotBg.setShape(GradientDrawable.OVAL);
+    dotBg.setColor(ContextCompat.getColor(mContext, SurfaceBarView.SURFACE_COLOR_RES[surfaceIdx]));
+    dot.setBackground(dotBg);
+    row.addView(dot);
+
+    final MaterialTextView text = new MaterialTextView(mContext);
+    TextViewCompat.setTextAppearance(text, R.style.MwmTextAppearance_Body3);
+    text.setText(String.format(Locale.getDefault(), "%s · %s — %d%%",
+                               mContext.getString(SurfaceBarView.SURFACE_NAME_RES[surfaceIdx]),
+                               distance.toString(mContext), Math.round(percent)));
+    row.addView(text);
+    return row;
+  }
+
+  @NonNull
+  private static String buildSurfaceContentDescription(@NonNull Context context, @NonNull Distance[] surface)
+  {
+    double total = 0.0;
+    for (Distance d : surface)
+      total += d.mDistance;
+    if (total <= 0.0)
+      return "";
+    final StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < surface.length; ++i)
+    {
+      final int percent = (int) Math.round(surface[i].mDistance / total * 100.0);
+      if (percent <= 0)
+        continue;
+      if (sb.length() > 0)
+        sb.append(", ");
+      sb.append(percent).append("% ")
+        .append(context.getString(SurfaceBarView.SURFACE_NAME_RES[i]).toLowerCase(Locale.getDefault()));
+    }
+    return sb.toString();
   }
 
   // Scroll RecyclerView to bottom using parent ScrollView.

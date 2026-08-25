@@ -2,6 +2,7 @@
 
 #include "routing/brouter_gpx_parser.hpp"
 #include "routing/route.hpp"
+#include "routing/route_surface.hpp"
 #include "routing/router_delegate.hpp"
 #include "routing/routing_helpers.hpp"
 #include "routing/segment.hpp"
@@ -72,7 +73,78 @@ turns::TurnItem BuildTurnItem(int idx, std::vector<TurnHint> const & hints, uint
   TurnHint const * h = FindHintForSegment(hints, idx, true /* exact */);
   if (h == nullptr)
     return turns::TurnItem(pointIndex, turns::CarDirection::None);
-  return turns::TurnItem(pointIndex, BrouterTurnToCarDirection(h->turnCode, h->angleDeg));
+  // Mode 9 voicehints carry no turn angle; direction comes from the turn code.
+  // Roundabout exits keep the BRouter exit number so guidance can say
+  // "take the N-th exit" and the arrow is drawn at the exit junction.
+  return turns::TurnItem(pointIndex, BrouterTurnToCarDirection(h->turnCode, 0.0),
+                         BrouterTurnExitNumber(h->turnCode));
+}
+
+// BRouter's `VoiceHintProcessor` only attaches a roundabout hint at the EXIT
+// junction (carrying the exit number), never at the entry. As a result the
+// turn sitting at the roundabout entry is whatever non-roundabout hint
+// BRouter emitted for the approach (typically TurnSlightLeft/Right), or None
+// when the approach is a straight continue.
+//
+// The standard bicycle router, by contrast, always pairs an `EnterRoundAbout`
+// turn with the matching `LeaveRoundAbout` exit. Rewrite the nearest real
+// turn before each `LeaveRoundAbout` (with a non-zero exit number) into
+// `EnterRoundAbout` so that the bottom-sheet turn list shows the same
+// "Enter roundabout" / "Take the Nth exit" pair a cyclist sees on a bicycle
+// route, and so that TTS reads the same wording on both engines.
+//
+// Note: this only renames the entry-turn label; the on-map arrow shape is
+// identical for any `CarDirection` because a single "route-arrow" texture is
+// rotated by the polyline's local direction in the arrow shader — so the
+// visual arrow at the entry already matches the bicycle render either way.
+void SynthesizeRoundaboutEntries(std::vector<RouteSegment> & segments)
+{
+  using routing::RouteSegment;
+  using routing::turns::CarDirection;
+  using routing::turns::TurnItem;
+
+  // An exit we want to balance: leaves a roundabout with a concrete exit number.
+  auto const isRoundaboutExit = [](RouteSegment const & seg) {
+    auto const & t = seg.GetTurn();
+    return t.m_turn == CarDirection::LeaveRoundAbout && t.m_exitNum != 0;
+  };
+
+  for (size_t i = 1; i < segments.size(); ++i)
+  {
+    if (!isRoundaboutExit(segments[i]))
+      continue;
+
+    // Walk back over consecutive None segments (e.g. a straight approach)
+    // until we find the most recent real turn. entryIdx == 0 stays valid:
+    // the outer guards below handle the "nothing to rewrite" cases there
+    // as well.
+    size_t entryIdx = i - 1;
+    while (entryIdx > 0
+           && segments[entryIdx].GetTurn().m_turn == CarDirection::None)
+    {
+      --entryIdx;
+    }
+
+    auto const entryTurn = segments[entryIdx].GetTurn();
+    auto const direction = entryTurn.m_turn;
+    // Skip when there is nothing to label as an entry turn:
+    // - None: straight approach, no hint to rewrite;
+    // - EnterRoundAbout: entry already balanced (e.g. two exits sharing one
+    //   entry through zero None segments in between);
+    // - LeaveRoundAbout: the exit of a previous roundabout sits directly
+    //   ahead of this one (back-to-back roundabouts). Rewriting it would
+    //   destroy that exit turn, so this entry stays unlabelled.
+    if (direction == CarDirection::None || direction == CarDirection::EnterRoundAbout ||
+        direction == CarDirection::LeaveRoundAbout)
+      continue;
+
+    // Wholesale rewrite via the public SetTurn setter: BRouter responses never
+    // carry lane info, so the only things copied forward are m_index and the
+    // pedestrian direction (defaulted). m_exitNum is forced to 0 because the
+    // entry turn itself has no exit.
+    segments[entryIdx].SetTurn(
+        TurnItem(entryTurn.m_index, CarDirection::EnterRoundAbout, 0));
+  }
 }
 
 std::vector<Route> BuildRoutes(std::vector<BrouterTrack> const & tracks)
@@ -87,6 +159,7 @@ std::vector<Route> BuildRoutes(std::vector<BrouterTrack> const & tracks)
     auto const & track = trackData.points;
     std::vector<TurnHint> const & hints = trackData.hints;
     std::vector<geometry::Altitude> const & trackAlts = trackData.altitudes;
+    std::vector<WayTagsRun> const & wayTagRuns = trackData.wayTagRuns;
     if (track.size() < 2)
       continue;
     auto const safeAlt = [](geometry::Altitude a) {
@@ -100,8 +173,12 @@ std::vector<Route> BuildRoutes(std::vector<BrouterTrack> const & tracks)
 
     std::vector<RouteSegment> routeSegments;
     routeSegments.reserve(track.size() - 1);
-    std::vector<double> times = BuildCumulativeTimes(track, hints);
+    std::vector<double> times = BuildCumulativeTimes(trackData);
 
+    // Accumulate per-surface distances while building the segments. BRouter
+    // attaches the way tags to the point the way ends at, so segment i
+    // (points i -> i + 1) inherits the tags carried by point i + 1.
+    SurfaceStats surfaceStats;
     for (size_t i = 0; i < track.size() - 1; ++i)
     {
       // m_index is the polyline point index that this turn applies to, which
@@ -121,7 +198,15 @@ std::vector<Route> BuildRoutes(std::vector<BrouterTrack> const & tracks)
         roadNameInfo.m_destination = best->destination;
       }
       routeSegments.emplace_back(segment, turn, junction, roadNameInfo);
+
+      std::string const * wayTags = WayTagsAt(wayTagRuns, i + 1);
+      RouteSurface const surface = SurfaceFromWayTags(wayTags ? *wayTags : std::string{});
+      routeSegments.back().SetSurface(surface);
+      double const segDistM = mercator::DistanceOnEarth(track[i], track[i + 1]);
+      surfaceStats.m_distanceM[static_cast<size_t>(surface)] += segDistM;
+      surfaceStats.m_totalM += segDistM;
     }
+    SynthesizeRoundaboutEntries(routeSegments);
     FillSegmentInfo(times, routeSegments);
 
     std::vector<Route::SubrouteAttrs> subroutes;
@@ -134,6 +219,7 @@ std::vector<Route> BuildRoutes(std::vector<BrouterTrack> const & tracks)
     route.SetRouteSegments(std::move(routeSegments));
     route.SetSubroteAttrs(std::move(subroutes));
     route.SetGeometry(track.begin(), track.end());
+    route.SetSurfaceStats(std::move(surfaceStats));
     routes.push_back(std::move(route));
     ++routeId;
   }
@@ -177,7 +263,11 @@ std::vector<Route> BRouterRouter::CalculateRoutes(Checkpoints const & checkpoint
   std::vector<BrouterTrack> tracks;
 #ifdef __ANDROID__
   // One bind cycle fetches all kMaxRoutes alternatives (Java side iterates
-  // the BRouter alternative indexes and stops on the first failure).
+  // the BRouter alternative indexes and stops on the first failure). Each
+  // mode 9 document carries per-point way tags and, via the injected
+  // profile:showspeed variable, a per-point <brouter:speed> that yields
+  // exact per-alternative route times (the <brouter:info> metadata total is
+  // shared by all alternatives and thus not per-route).
   std::vector<std::string> const gpxList = jni::BRouterCalculateRoutes(lats, lons, kMaxRoutes);
   for (auto const & gpx : gpxList)
   {

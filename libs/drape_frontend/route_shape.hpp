@@ -159,6 +159,17 @@ struct Subroute
   m2::PolylineD m_polyline;
   std::vector<double> m_turns;
   std::vector<traffic::SpeedGroup> m_traffic;
+  // Per-segment colors in polyline order (segment i connects point i to
+  // point i + 1). When non-empty it takes precedence over m_traffic and the
+  // line is drawn with these colors (solid, transparent outline).
+  //
+  // INVARIANT: like m_traffic, entries are indexed relative to this Subroute
+  // slice, and RouteShape::CacheRoute requires
+  //   m_surfaceColors.size() == m_style[i].m_endIndex - m_style[i].m_startIndex
+  // for every cached style range. Fillers must build colors from the same
+  // segment slice they pass to CreateDrapeSubroute — a route-global vector
+  // here silently disables the coloring instead of failing.
+  std::vector<dp::Color> m_surfaceColors;
   double m_baseDistance = 0.0;
   double m_baseDepthIndex = 0.0;
   float m_maxPixelWidth = -1.0f;
