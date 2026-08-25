@@ -17,6 +17,9 @@
 #include "drape/render_state.hpp"
 #include "drape/vertex_array_buffer.hpp"
 
+#include "indexer/map_style.hpp"
+#include "indexer/map_style_reader.hpp"
+
 #include "geometry/polyline2d.hpp"
 #include "geometry/rect2d.hpp"
 #include "geometry/screenbase.hpp"
@@ -49,6 +52,21 @@ std::string const kRouteFakeOutlineColor = "RouteFakeOutline";
 
 namespace
 {
+// Neutral night dimming for the turn arrows of surface-colored (BRouter)
+// subroutes. Such routes are a single subroute, so GetArrowMaskColor always
+// resolves to the fully transparent first-segment mask and the raw white
+// route-arrow texture would be used in both styles — glaring on the dark map
+// at night. Blend the arrows toward dark gray in the dark style (the same
+// dimming idea the style-aware RouteArrowsMask* constants apply to later
+// subroutes of the standard engines); the light style keeps the raw texture
+// (transparent mask = no blending in the arrow shader).
+dp::Color GetSurfaceArrowMaskColor()
+{
+  if (GetStyleReader().GetCurrentStyle() == MapStyle::MapStyleDefaultDark)
+    return dp::Color(0x2B, 0x2B, 0x2B, 128);
+  return dp::Color::Transparent();
+}
+
 std::array<float, 20> constexpr kPreviewPointRadiusInPixel = {
     // 1   2     3     4     5     6     7     8     9     10
     0.8f, 0.8f, 2.0f, 2.5f, 2.5f, 2.5f, 2.5f, 2.5f, 2.5f, 2.5f,
@@ -520,9 +538,12 @@ void RouteRenderer::RenderSubrouteArrows(ref_ptr<dp::GraphicsContext> context, r
   auto const arrowHalfWidth = static_cast<float>(currentHalfWidth * kArrowHeightFactor);
   params.m_arrowHalfWidth = arrowHalfWidth;
 
-  // Adjust arrow color depending on route type and subroute distance
-  params.m_maskColor =
-      glsl::ToVec4(GetArrowMaskColor(subrouteInfo.m_subroute->m_routeType, subrouteInfo.m_subroute->m_baseDistance));
+  // Adjust arrow color depending on route type and subroute distance.
+  // Surface-colored subroutes override the mask: see GetSurfaceArrowMaskColor.
+  params.m_maskColor = glsl::ToVec4(
+      subrouteInfo.m_subroute->m_surfaceColors.empty()
+          ? GetArrowMaskColor(subrouteInfo.m_subroute->m_routeType, subrouteInfo.m_subroute->m_baseDistance)
+          : GetSurfaceArrowMaskColor());
 
   ref_ptr<dp::GpuProgram> prg = mng->GetProgram(gpu::Program::RouteArrow);
   prg->Bind();
