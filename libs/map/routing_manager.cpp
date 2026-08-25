@@ -248,15 +248,20 @@ RoadWarningMarkType GetRoadType(RoutingOptions::Option road)
 dp::Color SurfaceToRouteColor(routing::RouteSurface surface)
 {
   // PAIRS WITH android/app/src/main/res/values/colors.xml — the on-map route
-  // line must stay identical to the bottom-sheet legend. C++ cannot read
-  // Android resources, so the hex values are duplicated here; if you change a
-  // color below, change the matching surface_* entry in colors.xml too (and
-  // vice versa):
+  // line must stay in the same hue family as the bottom-sheet legend. C++
+  // cannot read Android resources, so the hex values are duplicated here; if
+  // you change a color below, change the matching surface_* entry in
+  // colors.xml too (and vice versa):
   //   Paved       -> R.color.surface_paved       (#4CAF50)
   //   Gravel      -> R.color.surface_gravel      (#FFC107)
   //   Dirt        -> R.color.surface_dirt        (#8D6E63)
   //   Singletrack -> R.color.surface_singletrack (#FF7043)
   //   Unknown     -> R.color.surface_unknown     (#9E9E9E)
+  //
+  // The legend additionally has lighter -night tints (values-night), but this
+  // function intentionally uses the base hexes for both modes: drape colors
+  // come from the compiled drules style binaries, and per-style surface
+  // constants would require regenerating them (see data/styles/*/drape_colors.mapcss).
   switch (surface)
   {
   case routing::RouteSurface::Paved: return dp::Color(0x4C, 0xAF, 0x50);

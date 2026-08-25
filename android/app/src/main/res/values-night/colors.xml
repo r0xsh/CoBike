@@ -63,4 +63,14 @@
   <color name="tourism">#6E4426</color>
   <color name="transport">#2F6499</color>
   <color name="water">#0A6074</color>
+
+  <!-- Surface analysis (BRouter way tags); lighter tints of the
+       values/colors.xml base hexes for contrast on dark backgrounds. NOTE:
+       the on-map route line (libs/map/routing_manager.cpp
+       SurfaceToRouteColor) always uses the base hexes in both modes. -->
+  <color name="surface_paved">#66BB6A</color>
+  <color name="surface_gravel">#FFCA28</color>
+  <color name="surface_dirt">#A1887F</color>
+  <color name="surface_singletrack">#FF8A65</color>
+  <color name="surface_unknown">#BDBDBD</color>
 </resources>

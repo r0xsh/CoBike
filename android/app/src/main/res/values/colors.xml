@@ -155,7 +155,10 @@
   <color name="transport">#2F6499</color>
   <color name="water">#54A3B6</color>
 
-  <!-- Surface analysis (BRouter way tags) -->
+  <!-- Surface analysis (BRouter way tags). Base hexes; the night variants in
+       values-night/colors.xml are lighter tints. The on-map route line
+       (libs/map/routing_manager.cpp SurfaceToRouteColor) duplicates the base
+       hexes and uses them in both modes — keep the three lists in sync. -->
   <color name="surface_paved">#4CAF50</color>
   <color name="surface_gravel">#FFC107</color>
   <color name="surface_dirt">#8D6E63</color>
