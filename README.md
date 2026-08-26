@@ -16,7 +16,10 @@ See [ROADMAP.md](ROADMAP.md) for the planned features.
 
 ## Demo
 
-<video src="https://github.com/user-attachments/assets/dc448887-67b9-46f4-a8dc-66ff8268c6a7" width="300" controls muted loop></video>
+<div style="display: flex; gap: 10px; flex-wrap: wrap;">
+  <video src="https://github.com/user-attachments/assets/dc448887-67b9-46f4-a8dc-66ff8268c6a7" width="300" controls muted loop></video>
+  <img src="https://github.com/user-attachments/assets/d713f863-bc02-499c-96ff-7b1a7ced4856" width="300" alt="Surface feature screenshot">
+</div>
 
 ## Contributing
 
