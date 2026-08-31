@@ -23,6 +23,8 @@
 
 #include "indexer/feature_decl.hpp"
 
+#include "indexer/map_style_reader.hpp"
+
 #include "platform/settings.hpp"
 #include "routing/base/followed_polyline.hpp"
 
@@ -77,6 +79,8 @@ DrapeEngine::DrapeEngine(Params && params)
 
   if (!settings::Get(kLastEnterBackground, m_startBackgroundTime))
     m_startBackgroundTime = base::Timer::LocalTime();
+
+  (void)settings::Get(settings::kShowBookmarkLabels, m_showBookmarkLabels);
 
   std::vector<PostprocessRenderer::Effect> effects;
 
@@ -256,6 +260,20 @@ void DrapeEngine::InvalidateUserMarks()
                                   MessagePriority::Normal);
 }
 
+void DrapeEngine::UpdateBookmarkLabels(UserMarksProvider * provider)
+{
+  using namespace settings;
+  bool show = false;
+  if (Get(kShowBookmarkLabels, show))
+  {
+    m_showBookmarkLabels = show;
+
+    UpdateUserMarks(provider, true /* firstTime */);
+
+    InvalidateUserMarks();
+  }
+}
+
 void DrapeEngine::UpdateUserMarks(UserMarksProvider * provider, bool firstTime)
 {
   auto const updatedGroupIds = firstTime ? provider->GetAllGroupIds() : provider->GetUpdatedGroupIds();
@@ -286,6 +304,9 @@ void DrapeEngine::UpdateUserMarks(UserMarksProvider * provider, bool firstTime)
         collection.m_lineIds.push_back(lineId);
   };
 
+  auto const outlineColor =
+      MapStyleIsDark(GetStyleReader().GetCurrentStyle()) ? dp::Color::Black() : dp::Color::White();
+
   auto const collectRenderData =
       [&](kml::MarkIdSet const & markIds, kml::TrackIdSet const & lineIds, GroupFilter const & filter)
   {
@@ -293,7 +314,7 @@ void DrapeEngine::UpdateUserMarks(UserMarksProvider * provider, bool firstTime)
     {
       auto const mark = provider->GetUserPointMark(markId);
       if (filter == nullptr || filter(mark->GetGroupId()))
-        marksRenderCollection->emplace(markId, GenerateMarkRenderInfo(mark));
+        marksRenderCollection->emplace(markId, GenerateMarkRenderInfo(mark, outlineColor));
     }
 
     for (auto const lineId : lineIds)
@@ -438,8 +459,11 @@ std::optional<ref_ptr<dp::AccessibilityPresenter>> DrapeEngine::GetAccessibility
   return make_ref(*m_accessibilityPresenter);
 }
 
-void DrapeEngine::UpdateMapStyle()
+void DrapeEngine::UpdateMapStyle(bool const forceRerendering)
 {
+  if (forceRerendering)
+    m_frontend->ForceMapStyleRerendering();
+
   m_threadCommutator->PostMessage(ThreadsCommutator::RenderThread, make_unique_dp<UpdateMapStyleMessage>(),
                                   MessagePriority::High);
 }
@@ -915,7 +939,8 @@ void DrapeEngine::EnableDebugRectRendering(bool enabled)
                                   make_unique_dp<EnableDebugRectRenderingMessage>(enabled), MessagePriority::Normal);
 }
 
-drape_ptr<UserMarkRenderParams> DrapeEngine::GenerateMarkRenderInfo(UserPointMark const * mark)
+drape_ptr<UserMarkRenderParams> DrapeEngine::GenerateMarkRenderInfo(UserPointMark const * mark,
+                                                                    dp::Color outlineColor) const
 {
   auto renderInfo = make_unique_dp<UserMarkRenderParams>();
   renderInfo->m_markId = mark->GetId();
@@ -927,12 +952,13 @@ drape_ptr<UserMarkRenderParams> DrapeEngine::GenerateMarkRenderInfo(UserPointMar
     renderInfo->m_customDepth = true;
   }
   renderInfo->m_depthLayer = mark->GetDepthLayer();
+  renderInfo->m_titleDepthLayer = mark->GetDepthLayerEx(m_showBookmarkLabels);
   renderInfo->m_minZoom = mark->GetMinZoom();
   renderInfo->m_minTitleZoom = mark->GetMinTitleZoom();
   renderInfo->m_isVisible = mark->IsVisible();
   renderInfo->m_pivot = mark->GetPivot();
   renderInfo->m_pixelOffset = mark->GetPixelOffset();
-  renderInfo->m_titleDecl = mark->GetTitleDecl();
+  renderInfo->m_titleDecl = mark->GetTitleDeclEx(m_showBookmarkLabels, outlineColor);
   renderInfo->m_symbolNames = mark->GetSymbolNames();
   renderInfo->m_coloredSymbols = mark->GetColoredSymbols();
   renderInfo->m_symbolSizes = mark->GetSymbolSizes();
@@ -968,6 +994,11 @@ drape_ptr<UserLineRenderParams> DrapeEngine::GenerateLineRenderInfo(UserLineMark
                                       mark->GetDepth(layerIndex));
   }
   return renderInfo;
+}
+
+double DrapeEngine::GetVisualScale()
+{
+  return VisualParams::Instance().GetVisualScale();
 }
 
 void DrapeEngine::UpdateVisualScale(double vs, bool needStopRendering)

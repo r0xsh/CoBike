@@ -320,6 +320,10 @@ public class Framework
 
   public static native boolean nativeIsOutdoorsLayerEnabled();
 
+  public static native void nativeSwitchToUsingVehicleStyle(boolean enabled);
+
+  public static native boolean nativeIsUsingVehicleStyle();
+
   @NonNull
   public static native MapObject nativeDeleteBookmarkFromMapObject();
 
@@ -358,6 +362,10 @@ public class Framework
   public static native void nativeSetPowerManagerFacility(int facilityType, boolean state);
   public static native int nativeGetPowerManagerScheme();
   public static native void nativeSetPowerManagerScheme(int schemeType);
+
+  public static native boolean nativeGetShowBookmarkLabels();
+  public static native void nativeSetShowBookmarkLabels(boolean show);
+
   public static native void nativeSetViewportCenter(double lat, double lon, int zoom);
   public static native void nativeStopLocationFollow();
 

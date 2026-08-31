@@ -25,27 +25,6 @@ NSString * const kUDFileLoggingEnabledKey = @"FileLoggingEnabledKey";
 
 @implementation MWMSettings
 
-+ (BOOL)buildings3dViewEnabled;
-{
-  bool _ = true, on = true;
-  GetFramework().Load3dMode(_, on);
-  if (GetFramework().GetPowerManager().GetScheme() == power_management::Scheme::EconomyMaximum) {
-    return false;
-  } else {
-    return on;
-  }
-}
-
-+ (void)setBuildings3dViewEnabled:(BOOL)buildings3dViewEnabled;
-{
-  auto &f = GetFramework();
-  bool _ = true, is3dBuildings = true;
-  f.Load3dMode(_, is3dBuildings);
-  is3dBuildings = static_cast<bool>(buildings3dViewEnabled);
-  f.Save3dMode(_, is3dBuildings);
-  f.Allow3dMode(_, is3dBuildings);
-}
-
 + (BOOL)perspectiveViewEnabled;
 {
   bool _ = true, on = true;
@@ -103,7 +82,7 @@ NSString * const kUDFileLoggingEnabledKey = @"FileLoggingEnabledKey";
 
 + (BOOL)zoomButtonsEnabled
 {
-  bool enabled = true;
+  bool enabled = false;
   UNUSED_VALUE(settings::Get(kZoomButtonsEnabledKey, enabled));
   return enabled;
 }
@@ -111,7 +90,16 @@ NSString * const kUDFileLoggingEnabledKey = @"FileLoggingEnabledKey";
 + (void)setZoomButtonsEnabled:(BOOL)zoomButtonsEnabled
 {
   settings::Set(kZoomButtonsEnabledKey, static_cast<bool>(zoomButtonsEnabled));
-  [MWMMapViewControlsManager manager].zoomHidden = !zoomButtonsEnabled;
+}
+
++ (BOOL)showBookmarkLabels
+{
+  return GetFramework().GetShowBookmarkLabels();
+}
+
++ (void)setShowBookmarkLabels:(BOOL)show
+{
+  GetFramework().SetShowBookmarkLabels(show);
 }
 
 + (MWMTheme)theme
@@ -139,6 +127,11 @@ NSString * const kUDFileLoggingEnabledKey = @"FileLoggingEnabledKey";
   BOOL const autoOff = theme != MWMThemeAuto;
   [ud setBool:autoOff forKey:kUDAutoNightModeOff];
   [MWMThemeManager invalidate];
+}
+
++ (bool)powerManagementBuildings3d
+{
+  return GetFramework().GetPowerManager().IsFacilityEnabled(Facility::Buildings3d);
 }
 
 + (NSInteger)powerManagement
@@ -183,10 +176,13 @@ NSString * const kUDFileLoggingEnabledKey = @"FileLoggingEnabledKey";
   [ud setObject:spotlightLocaleLanguageId forKey:kSpotlightLocaleLanguageId];
 }
 
-+ (BOOL)largeFontSize { return GetFramework().LoadLargeFontsSize(); }
-+ (void)setLargeFontSize:(BOOL)largeFontSize
++ (double)fontScaleFactor
 {
-  GetFramework().SetLargeFontsSize(static_cast<bool>(largeFontSize));
+  return GetFramework().LoadFontScaleFactor();
+}
++ (void)setFontScaleFactor:(double)fontScaleFactor
+{
+  GetFramework().SetFontScaleFactor(static_cast<double>(fontScaleFactor));
 }
 
 + (NSDictionary<NSString *, NSString *> *)availableMapLanguages;

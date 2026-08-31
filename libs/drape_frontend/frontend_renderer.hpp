@@ -171,6 +171,7 @@ public:
   location::EMyPositionMode GetMyPositionMode() const { return m_myPositionController->GetCurrentMode(); }
 
   void OnEnterBackground();
+  void ForceMapStyleRerendering();
 
 protected:
   void AcceptMessage(ref_ptr<Message> message) override;
@@ -223,6 +224,8 @@ private:
   void PrepareScene(ScreenBase const & modelView);
   void UpdateScene(ScreenBase const & modelView);
   void BuildOverlayTree(ScreenBase const & modelView);
+  void UpdateSearchMarkTextOverlay(ScreenBase const & modelView);
+  ref_ptr<dp::OverlayTree> GetOverlayTree(DepthLayer layerId) const;
 
   void EmitModelViewChanged(ScreenBase const & modelView) const;
 
@@ -348,6 +351,8 @@ private:
   drape_ptr<DrapeApiRenderer> m_drapeApiRenderer;
 
   drape_ptr<dp::OverlayTree> m_overlayTree;
+  // Actually, it holds displacing Bookmark titles. The tree named after SearchMarkLayer.
+  drape_ptr<dp::OverlayTree> m_searchMarkTextOverlayTree;
 
   FrameValues m_frameValues;
 
@@ -444,6 +449,8 @@ private:
   bool m_firstTilesReady = false;
   bool m_firstLaunchAnimationTriggered = false;
   bool m_firstLaunchAnimationInterrupted = false;
+
+  bool m_forceMapStyleRerendering = false;
 
 #if defined(OMIM_OS_DESKTOP)
   GraphicsReadyHandler m_graphicsReadyFn;

@@ -125,6 +125,7 @@ public:
     OverlaysShowStatsCallback m_overlaysShowStatsCallback;
     OnGraphicsContextInitialized m_onGraphicsContextInitialized;
     dp::RenderInjectionHandler m_renderInjectionHandler;
+    bool m_forceMapStyleRerendering;
   };
 
   DrapeEngine(Params && params);
@@ -162,8 +163,9 @@ public:
 
   void ClearUserMarksGroup(kml::MarkGroupId groupId);
   void ChangeVisibilityUserMarksGroup(kml::MarkGroupId groupId, bool isVisible);
-  void UpdateUserMarks(UserMarksProvider * provider, bool firstTime);
   void InvalidateUserMarks();
+  void UpdateBookmarkLabels(UserMarksProvider * provider);
+  void UpdateUserMarks(UserMarksProvider * provider, bool firstTime);
 
   void SetRenderingEnabled(ref_ptr<dp::GraphicsContextFactory> contextFactory = nullptr);
   void SetRenderingDisabled(bool const destroySurface);
@@ -172,7 +174,7 @@ public:
   void AccessibilityDataHandler(dp::AccessibilityData * data);
   void SetAccessibilityPresenter(std::optional<drape_ptr<dp::AccessibilityPresenter>> && presenter);
   std::optional<ref_ptr<dp::AccessibilityPresenter>> GetAccessibilityPresenter() const;
-  void UpdateMapStyle();
+  void UpdateMapStyle(bool const forceRerendering = false);
 
   void SetCompassInfo(location::CompassInfo const & info);
   void SetGpsInfo(location::GpsInfo const & info, df::NavigationContext const & navigationContext,
@@ -260,6 +262,7 @@ public:
 
   void ShowDebugInfo(bool shown);
 
+  double GetVisualScale();
   void UpdateVisualScale(double vs, bool needStopRendering);
   void UpdateMyPositionRoutingOffset(bool useDefault, int offsetY);
 
@@ -283,7 +286,7 @@ private:
 
   dp::DrapeID GenerateDrapeID();
 
-  static drape_ptr<UserMarkRenderParams> GenerateMarkRenderInfo(UserPointMark const * mark);
+  drape_ptr<UserMarkRenderParams> GenerateMarkRenderInfo(UserPointMark const * mark, dp::Color outlineColor) const;
   static drape_ptr<UserLineRenderParams> GenerateLineRenderInfo(UserLineMark const * mark);
 
   drape_ptr<FrontendRenderer> m_frontend;
@@ -313,6 +316,8 @@ private:
   std::atomic<dp::AccessibilityData *> m_accessibilityData;
   // only access this from the gui thread! it may get modified or deallocated racily otherwise.
   std::optional<drape_ptr<dp::AccessibilityPresenter>> m_accessibilityPresenter;
+
+  bool m_showBookmarkLabels = true;
 
   friend class DrapeApi;
 };

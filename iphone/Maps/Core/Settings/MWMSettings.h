@@ -1,9 +1,6 @@
 NS_SWIFT_NAME(SettingsBridge)
 @interface MWMSettings : NSObject
 
-+ (BOOL)buildings3dViewEnabled;
-+ (void)setBuildings3dViewEnabled:(BOOL)buildings3dViewEnabled;
-
 + (BOOL)perspectiveViewEnabled;
 + (void)setPerspectiveViewEnabled:(BOOL)perspectiveViewEnabled;
 
@@ -19,9 +16,13 @@ NS_SWIFT_NAME(SettingsBridge)
 + (BOOL)zoomButtonsEnabled;
 + (void)setZoomButtonsEnabled:(BOOL)zoomButtonsEnabled;
 
++ (BOOL)showBookmarkLabels;
++ (void)setShowBookmarkLabels:(BOOL)show;
+
 + (MWMTheme)theme;
 + (void)setTheme:(MWMTheme)theme;
 
++ (bool)powerManagementBuildings3d;
 + (NSInteger)powerManagement;
 + (void)setPowerManagement:(NSInteger)powerManagement;
 
@@ -31,8 +32,8 @@ NS_SWIFT_NAME(SettingsBridge)
 + (NSString *)spotlightLocaleLanguageId;
 + (void)setSpotlightLocaleLanguageId:(NSString *)spotlightLocaleLanguageId;
 
-+ (BOOL)largeFontSize;
-+ (void)setLargeFontSize:(BOOL)largeFontSize;
++ (double)fontScaleFactor;
++ (void)setFontScaleFactor:(double)fontScaleFactor;
 
 + (NSDictionary<NSString *, NSString *> *)availableMapLanguages;
 + (NSString *)mapLanguageCode;

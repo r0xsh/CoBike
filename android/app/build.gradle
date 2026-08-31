@@ -205,7 +205,6 @@ android {
       signingConfig = signingConfigs.debug
       resValue 'string', 'app_name', 'CoBike Debug'
       packagingOptions.jniLibs.useLegacyPackaging true
-      android.packagingOptions.jniLibs.keepDebugSymbols += '**/liborganicmaps.so'
     }
 
     release {
