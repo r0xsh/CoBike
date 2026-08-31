@@ -1,73 +1,68 @@
 # CoBike Roadmap
 
-Offline-first bikepacking navigation on top of CoMaps / Organic Maps, with
-[BRouter](https://github.com/abrensch/brouter) routing.
+CoBike is offline-first bikepacking navigation built on top of CoMaps and Organic Maps. It uses [BRouter](https://github.com/abrensch/brouter) for routing.
 
-Status is tracked with checkboxes (`- [x]` done, `- [ ]` pending). Each item can
-be copied 1:1 into a GitHub issue (title + first paragraph as body) and mapped
-to the labels below in a GitHub Projects roadmap.
+This page tracks what we plan to do. A box with `[x]` is done. An empty box `[ ]` is still to do. Each item can be turned straight into a GitHub issue. Just copy the title and the first paragraph as the issue body.
 
-Suggested labels: `priority:high`, `priority:medium`, `priority:low`,
-`size:s`, `size:m`, `size:l`, and one of `phase:1`, `phase:2`, `phase:3`.
+If you want to put this in a GitHub Project, these labels work well:
 
-## Phase 1 — Differentiate (quick wins, biggest value)
+- `priority:high`, `priority:medium`, `priority:low`
+- `size:s`, `size:m`, `size:l`
+- `phase:1`, `phase:2`, `phase:3`
 
-BRouter already returns most of the data these items need. Goal: features that
-make CoBike the "gravel Komoot" of the FOSS world.
+## Phase 1: Quick wins
 
-- [ ] **Surface analysis** — `size:m` `priority:high`
-  Parse the `surface` / `smoothness` waytags from BRouter's GPX output and
-  show a per-route breakdown (e.g. "62% paved / 30% gravel / 8% singletrack"),
-  plus color the route line by surface type. This is the single feature that
-  separates a bikepacking app from a cycling app.
-- [ ] **Alternatives with stats** — `size:s` `priority:high`
-  Routes already fetch `alternativeidx` 0..n. Show a per-alternative summary
-  (distance, climbing, surface mix) so choosing one is not a gamble.
-- [ ] **GPX export with turn instructions** — `size:s` `priority:high`
-  Export the calculated route as GPX including BRouter's osmand turn
-  instructions (`rtept`) for use on Garmin/Wahoo devices. Organic Maps only
-  exports KML/KMZ today.
-- [ ] **Cue sheet** — `size:s` `priority:medium`
-  Plain-text / printable turn-by-turn list from the same instructions, as the
-  paper-map backup every long-distance ride should have.
+Most of the data for these features already comes back from BRouter. The goal is small changes that make CoBike feel like the gravel Komoot of the open source world.
 
-## Phase 2 — Bikepacking POIs (what makes it bikepacking)
+- [ ] **Surface analysis** (`size:m` `priority:high`)
+  Read the `surface` and `smoothness` tags from BRouter's GPX output. Show a short breakdown for each route, like "62% paved, 30% gravel, 8% singletrack". Also color the route line by surface type. This is the one feature that turns a normal cycling app into a real bikepacking app.
 
-OSM tags are already in the map data; the work is the "along route" query and
-navigation-mode quick filters.
+- [ ] **Alternatives with stats** (`size:s` `priority:high`)
+  We already ask BRouter for alternative routes. Today there's no way to compare them. Show a short summary for each one: distance, climbing, and surface mix. Picking a route shouldn't feel like a guess.
 
-- [ ] **Water sources** — `size:m` `priority:high`
-  `amenity=drinking_water`, `man_made=water_tap`, `natural=spring` as a
-  toggleable overlay and "search along route". The #1 real-world need in the
-  field.
-- [ ] **Food resupply along route** — `size:m` `priority:high`
-  Bakeries, groceries, supermarkets with opening hours, sorted by distance
-  from the current route.
-- [ ] **Shelter and bivouac spots** — `size:m` `priority:high`
-  `tourism=wilderness_hut`, `amenity=shelter`, `tourism=camp_site` (bothies
-  included) — critical information when weather turns bad.
-- [ ] **Bail-out options** — `size:s` `priority:medium`
-  Train stations near the route for emergencies and bike-train combos.
-- [ ] **Bike support** — `size:s` `priority:low`
-  Bike shops, repair stations and public pumps along the route.
+- [ ] **GPX export with turn instructions** (`size:s` `priority:high`)
+  Let users export the planned route as a GPX file. Include BRouter's turn instructions so it works on Garmin and Wahoo bike computers. Organic Maps only exports KML or KMZ today, which most bike computers don't read well.
 
-## Phase 3 — Bigger bets
+- [ ] **Cue sheet** (`size:s` `priority:medium`)
+  A printable turn-by-turn list. Every long ride should have a paper backup in case the phone dies.
 
-- [ ] **BRouter profile picker** — `size:l` `priority:medium`
-  The client currently hardcodes `v=bicycle, fast=1`. Expose profile selection
-  (trekking vs fastbike) and key parameters (`iswet`, avoid-steep, etc.) in the
-  routing settings.
-- [ ] **Follow-GPX-track mode** — `size:l` `priority:medium`
-  Navigate along an imported track without re-routing it, for riders who
-  strictly follow a planned route (BRouter can snap to the track).
-- [ ] **Sunrise / sunset per stage** — `size:s` `priority:low`
-  Fully offline-calculable; helps plan realistic daily stages.
-- [ ] **Battery saver navigation mode** — `size:m` `priority:medium`
-  Auto dim / screen-off between turns during navigation. Battery life is a
-  safety concern, not a convenience, on multi-day trips.
+## Phase 2: Bikepacking places
 
-## Non-goals (for now)
+The OSM tags for these are already in the map data. The real work is the "search along the route" query and a few quick filters in the navigation view.
 
-- Weather / wind forecasts (needs network; conflicts with offline-first)
-- Community route library / heatmaps (needs a backend)
-- Multi-device sync and co-owned collections (needs accounts)
+- [ ] **Water sources** (`size:m` `priority:high`)
+  Show `amenity=drinking_water`, `man_made=water_tap`, and `natural=spring` as a toggle layer. Also let users search along the current route. Water is the first thing bikepackers run out of in the field.
+
+- [ ] **Food resupply** (`size:m` `priority:high`)
+  Bakeries, grocery stores, and supermarkets with opening hours. Sorted by distance from the route.
+
+- [ ] **Shelter and bivouac** (`size:m` `priority:high`)
+  `tourism=wilderness_hut`, `amenity=shelter`, and `tourism=camp_site`, including bothies. When the weather turns bad, this info matters a lot.
+
+- [ ] **Bail-out options** (`size:s` `priority:medium`)
+  Train stations close to the route. Useful for emergencies and for mixing the bike with trains.
+
+- [ ] **Bike support** (`size:s` `priority:low`)
+  Bike shops, repair stations, and public pumps along the route.
+
+## Phase 3: Bigger bets
+
+These take more time and carry more risk. We'll only do them once the earlier phases feel solid.
+
+- [ ] **BRouter profile picker** (`size:l` `priority:medium`)
+  Today the app is hardcoded to `v=bicycle, fast=1`. Let users pick a profile like trekking or fastbike. Also expose the main settings, like wet roads or avoiding steep climbs.
+
+- [ ] **Follow a GPX track** (`size:l` `priority:medium`)
+  Let users import a planned track and follow it without re-routing. Useful for riders who trust their plan and don't want the app to "help". BRouter can snap to the track.
+
+- [ ] **Sunrise and sunset per stage** (`size:s` `priority:low`)
+  Pure offline math. Helps users plan realistic daily distances.
+
+- [ ] **Battery saver mode** (`size:m` `priority:medium`)
+  Auto-dim or turn the screen off between turns while navigating. On multi-day trips, battery life is a safety thing, not just a nice-to-have.
+
+## Not on the plan right now
+
+- Weather or wind forecasts. They need the network, and that breaks the offline-first rule.
+- Community routes or heatmaps. They need a backend.
+- Multi-device sync and shared collections. They need user accounts.
